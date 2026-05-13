@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Beat Maker</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
+        body { background: #0f172a; color: white; min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
+        .machine { background: #1e293b; padding: 25px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.4); width: 100%; max-width: 550px; }
+        h2 { text-align: center; margin-bottom: 20px; color: #f59e0b; }
+        .grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; margin-bottom: 20px; }
+        .row-label { display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; font-size: 14px; color: #94a3b8; grid-column: 1 / -1; margin-top: 8px; }
+        .step { aspect-ratio: 1; background: #334155; border-radius: 6px; cursor: pointer; transition: 0.15s; border: 2px solid transparent; }
+        .step:hover { background: #475569; }
+        .step.active { background: #3b82f6; border-color: #60a5fa; }
+        .step.current { border-color: #f59e0b; box-shadow: 0 0 10px rgba(245, 158, 11, 0.5); }
+        .step.kick.active { background: #ef4444; border-color: #f87171; }
+        .step.snare.active { background: #10b981; border-color: #34d399; }
+        .step.hihat.active { background: #f59e0b; border-color: #fbbf24; }
+        .step.clap.active { background: #8b5cf6; border-color: #a78bfa; }
+        .controls { display: flex; gap: 10px; align-items: center; }
+        button { flex: 1; padding: 10px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; color: white; }
+        .play { background: #10b981; }
+        .stop { background: #ef4444; }
+        .clear { background: #475569; }
+        button:hover { opacity: 0.9; transform: translateY(-1px); }
+        .bpm { background: #0f172a; padding: 8px; border-radius: 8px; color: #94a3b8; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+        input[type="range"] { flex: 1; accent-color: #f59e0b; }
+    </style>
+</head>
+<body>
+    <div class="machine">
+        <h2>🥁 Mini Beat Maker</h2>
+        <div class="grid" id="grid"></div>
+        <div class="controls">
+            <button class="play" id="playBtn" onclick="togglePlay()">▶ Boshlash</button>
+            <button class="stop" onclick="stop()">⏹ To'xtatish</button>
+            <button class="clear" onclick="clearGrid()">🗑 Tozalash</button>
+            <div class="bpm">
+                <span>BPM:</span>
+                <input type="range" id="bpm" min="60" max="180" value="120" oninput="updateBPM(this.value)">
+                <span id="bpmVal">120</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const instruments = [
+            { name: 'Kick', class: 'kick', freq: [150, 50] },
+            { name: 'Snare', class: 'snare', freq: [200, 100] },
+            { name: 'HiHat', class: 'hihat', freq: [800, 600] },
+            { name: 'Clap', class: 'clap', freq: [300, 150] }
+        ];
+        let grid = Array(4).fill(null).map(() => Array(8).fill(false));
+        let currentStep = 0, isPlaying = false, timer = null, bpm = 120;
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function createSound(type) {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            const t = ctx.currentTime;
+
+            if (type === 'kick') {
+                osc.frequency.setValueAtTime(150, t);
+                osc.frequency.exponentialRampToValueAtTime(50, t + 0.15);
+                gain.gain.setValueAtTime(0.8, t);
+                gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+                osc.start(t); osc.stop(t + 0.2);
+            } else if (type === 'snare') {
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(200, t);
+                gain.gain.setValueAtTime(0.5, t);
+                gain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
+                osc.start(t); osc.stop(t + 0.15);
+            } else {
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(type === 'hihat' ? 800 : 400, t);
+                gain.gain.setValueAtTime(0.3, t);
+                gain.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
+                osc.start(t); osc.stop(t + 0.08);
+            }
+        }
+
+        function renderGrid() {
+            const g = document.getElementById('grid');
+            g.innerHTML = '';
+            instruments.forEach((inst, i) => {
+                inst.steps.forEach((_, j) => {
+                    const step = document.createElement('div');
+                    step.className = `step ${inst.class} ${grid[i][j] ? 'active' : ''}`;
+                    step.dataset.row = i; step.dataset.col = j;
+                    step.onclick = () => {
+                        grid[i][j] = !grid[i][j];
+                        if (grid[i][j] && ctx.state === 'suspended') ctx.resume();
+                        createSound(inst.name.toLowerCase());
+                        renderGrid();
+                    };
+                    g.appendChild(step);
+                });
+            });
+        }
+
+        instruments.forEach(inst => inst.steps = Array(8).fill(false));
+
+        function togglePlay() {
+            if (isPlaying) return;
+            if (ctx.state === 'suspended') ctx.resume();
+            isPlaying = true;
+            document.getElementById('playBtn').textContent = '⏸ Ijro';
+            playStep();
+        }
+
+        function playStep() {
+            if (!isPlaying) return;
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('current'));
+            document.querySelectorAll(`.step[data-col="${currentStep}"]`).forEach(s => s.classList.add('current'));
+
+            instruments.forEach((inst, i) => {
+                if (grid[i][currentStep]) createSound(inst.name.toLowerCase());
+            });
+
+            currentStep = (currentStep + 1) % 8;
+            timer = setTimeout(playStep, 60000 / bpm / 2);
+        }
+
+        function stop() {
+            isPlaying = false;
+            clearTimeout(timer);
+            document.getElementById('playBtn').textContent = '▶ Boshlash';
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('current'));
+            currentStep = 0;
+        }
+
+        function clearGrid() { grid = Array(4).fill(null).map(() => Array(8).fill(false)); renderGrid(); }
+        function updateBPM(val) { bpm = val; document.getElementById('bpmVal').textContent = val; }
+
+        renderGrid();
+    </script>
+</body>
+</html>
